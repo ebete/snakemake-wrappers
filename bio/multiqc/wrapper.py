@@ -6,7 +6,8 @@ __email__ = "julianderuiter@gmail.com"
 __license__ = "MIT"
 
 
-from os import path
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from snakemake.shell import shell
 
@@ -17,20 +18,31 @@ extra = snakemake.params.get("extra", "")
 use_input_files_only = snakemake.params.get("use_input_files_only", False)
 
 if not use_input_files_only:
-    input_data = set(path.dirname(fp) for fp in snakemake.input)
+    input_data = set(map(lambda x: Path(x).parent, snakemake.input))
 else:
-    input_data = set(snakemake.input)
+    input_data = set(map(Path, snakemake.input))
 
-output_dir = path.dirname(snakemake.output[0])
-output_name = path.basename(snakemake.output[0])
+html_out = Path(snakemake.output.get("html", "./multiqc_results.html"))
+datazip_out = Path(snakemake.output["zip"]) if snakemake.output.get("zip") else None
+
 log = snakemake.log_fmt_shell(stdout=True, stderr=True)
 
-shell(
-    "multiqc"
-    " {extra}"
-    " --force"
-    " -o {output_dir}"
-    " -n {output_name}"
-    " {input_data}"
-    " {log}"
-)
+with TemporaryDirectory() as tempdir:
+    shell(
+        "multiqc"
+        " {extra}"
+        " --force"
+        " -o {tempdir:q}"
+        " -n {html_out.name}"
+        " --zip-data-dir"
+        " {input_data}"
+        " {log}"
+    )
+
+    tmp_html = Path(tempdir) / html_out.name
+    tmp_zip = Path(tempdir).joinpath(html_out.stem + "_data.zip")
+
+    if html_out != tmp_html:
+        shell("mv {tmp_html:q} {html_out:q}")
+    if datazip_out is not None and datazip_out != tmp_zip:
+        shell("mv {tmp_zip:q} {datazip_out:q}")
